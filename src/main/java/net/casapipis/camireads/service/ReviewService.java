@@ -17,36 +17,58 @@ public class ReviewService {
     public List<Review> searchReviews(
             String author,
             String bookTitle,
-            Integer rating,
-            OffsetDateTime reviewFrom,
+            Integer rating,              // viene como Integer desde el controller
+            OffsetDateTime reviewFrom,   // por ahora sin usar
             OffsetDateTime reviewTo,
             OffsetDateTime readFrom,
             OffsetDateTime readTo
     ) {
 
-        // para debug, si querés ver qué llega:
-        System.out.println(">>> author = '" + author + "'");
-        System.out.println(">>> bookTitle = '" + bookTitle + "'");
-
         boolean hasAuthor   = author != null && !author.isBlank();
         boolean hasBookName = bookTitle != null && !bookTitle.isBlank();
+        boolean hasRating   = rating != null;
 
-        // 🔹 Caso 1: ambos → usamos la nativa que ya funciona
-        if (hasAuthor && hasBookName) {
-            return reviewRepository.findByAuthorAndBookTitleLike(author, bookTitle);
+        // 🔹 1) autor + título + rating
+        if (hasAuthor && hasBookName && hasRating) {
+            return reviewRepository.findByAuthorAndBookTitleAndRating(
+                    author,
+                    bookTitle,
+                    rating
+            );
         }
 
-        // 🔹 Caso 2: solo autor
+        // 🔹 2) autor + rating
+        if (hasAuthor && hasRating) {
+            return reviewRepository.findByBook_AuthorContainingIgnoreCaseAndRating(
+                    author,
+                    rating
+            );
+        }
+
+        // 🔹 3) título + rating
+        if (hasBookName && hasRating) {
+            return reviewRepository.findByBook_TitleContainingIgnoreCaseAndRating(
+                    bookTitle,
+                    rating
+            );
+        }
+
+        // 🔹 4) solo rating
+        if (hasRating) {
+            return reviewRepository.findByRating(rating);
+        }
+
+        // 🔹 5) solo autor
         if (hasAuthor) {
             return reviewRepository.findByBook_AuthorContainingIgnoreCase(author);
         }
 
-        // 🔹 Caso 3: solo título
+        // 🔹 6) solo título
         if (hasBookName) {
             return reviewRepository.findByBook_TitleContainingIgnoreCase(bookTitle);
         }
 
-        // 🔹 Caso 4: sin filtros (por ahora devolvemos todo)
+        // 🔹 7) sin filtros → todo (después si querés lo cambiamos a paginado)
         return reviewRepository.findAll();
     }
 }

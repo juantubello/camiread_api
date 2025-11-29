@@ -9,7 +9,7 @@ import java.util.List;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
 
-    // 🔹 Búsqueda combinada: author + bookTitle (la que ya funciona)
+    // 🔹 Búsqueda combinada: author + bookTitle (YA FUNCIONABA)
     @Query(value = """
         SELECT r.*
         FROM reviews r
@@ -24,9 +24,35 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             @Param("bookTitle") String bookTitle
     );
 
-    // 🔹 Solo por autor (Spring Data arma el JOIN y el LIKE)
+    // 🔹 Búsqueda combinada: author + bookTitle + rating
+    @Query(value = """
+        SELECT r.*
+        FROM reviews r
+        JOIN books b ON b.id = r.book_id
+        WHERE LOWER(b.author) LIKE LOWER(CONCAT('%', :author, '%'))
+          AND LOWER(b.title)  LIKE LOWER(CONCAT('%', :bookTitle, '%'))
+          AND r.rating = :rating
+        ORDER BY r.created_at DESC
+        """,
+            nativeQuery = true)
+    List<Review> findByAuthorAndBookTitleAndRating(
+            @Param("author") String author,
+            @Param("bookTitle") String bookTitle,
+            @Param("rating") int rating
+    );
+
+    // 🔹 Solo autor
     List<Review> findByBook_AuthorContainingIgnoreCase(String author);
 
-    // 🔹 Solo por título
+    // 🔹 Solo título
     List<Review> findByBook_TitleContainingIgnoreCase(String bookTitle);
+
+    // 🔹 Solo rating
+    List<Review> findByRating(int rating);
+
+    // 🔹 autor + rating
+    List<Review> findByBook_AuthorContainingIgnoreCaseAndRating(String author, int rating);
+
+    // 🔹 título + rating
+    List<Review> findByBook_TitleContainingIgnoreCaseAndRating(String bookTitle, int rating);
 }
