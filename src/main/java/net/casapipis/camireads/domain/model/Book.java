@@ -2,7 +2,6 @@ package net.casapipis.camireads.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 @Entity
@@ -15,13 +14,14 @@ public class Book {
     private Long id;
 
     private String title;
+
     private String author;
 
     @Column(name = "start_read_date")
-    private LocalDate startReadDate;
+    private OffsetDateTime startReadDate;
 
     @Column(name = "end_read_date")
-    private LocalDate endReadDate;
+    private OffsetDateTime endReadDate;
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
@@ -32,10 +32,10 @@ public class Book {
     @Column(name = "url_cover")
     private String urlCover;
 
-    @Column(name = "b64_cover", columnDefinition = "text")
+    @Column(name = "b64_cover")
     private String b64Cover;
 
-    // --- getters y setters ---
+    // --- Getters y Setters ---
 
     public Long getId() {
         return id;
@@ -61,19 +61,19 @@ public class Book {
         this.author = author;
     }
 
-    public LocalDate getStartReadDate() {
+    public OffsetDateTime getStartReadDate() {
         return startReadDate;
     }
 
-    public void setStartReadDate(LocalDate startReadDate) {
+    public void setStartReadDate(OffsetDateTime startReadDate) {
         this.startReadDate = startReadDate;
     }
 
-    public LocalDate getEndReadDate() {
+    public OffsetDateTime getEndReadDate() {
         return endReadDate;
     }
 
-    public void setEndReadDate(LocalDate endReadDate) {
+    public void setEndReadDate(OffsetDateTime endReadDate) {
         this.endReadDate = endReadDate;
     }
 
