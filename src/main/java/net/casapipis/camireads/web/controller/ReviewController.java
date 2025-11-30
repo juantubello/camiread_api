@@ -1,6 +1,7 @@
 package net.casapipis.camireads.web.controller;
 
 import net.casapipis.camireads.domain.model.Review;
+import net.casapipis.camireads.dto.UpdateReviewRequest;
 import net.casapipis.camireads.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -12,7 +13,6 @@ import org.springframework.data.domain.Sort;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-
 
 @CrossOrigin(origins = "http://localhost:3000") // 👈 o "*" mientras desarrollás
 @RestController
@@ -67,5 +67,15 @@ public class ReviewController {
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
+
+    @PutMapping("/book/{bookId}")
+    public ResponseEntity<Review> updateReview(
+            @PathVariable Long bookId,
+            @RequestBody UpdateReviewRequest request
+    ) {
+        Review updated = reviewService.updateReview(bookId, request);
+        return ResponseEntity.ok(updated);
+    }
+
 
 }
