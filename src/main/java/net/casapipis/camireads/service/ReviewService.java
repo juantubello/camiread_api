@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import net.casapipis.camireads.domain.model.Review;
 import net.casapipis.camireads.domain.repository.ReviewRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -13,6 +15,11 @@ import java.util.List;
 public class ReviewService {
 
     private final ReviewRepository reviewRepository;
+
+    // 🔹 Nuevo método: últimas reseñas paginadas
+    public Page<Review> getLatestReviews(Pageable pageable) {
+        return reviewRepository.findAllByOrderByCreatedAtDesc(pageable);
+    }
 
     public List<Review> searchReviews(
             String author,
