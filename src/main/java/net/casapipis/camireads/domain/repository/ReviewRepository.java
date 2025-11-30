@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import java.util.Optional;
 
 import java.util.List;
 
@@ -60,5 +61,11 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     // 🔹 Últimas reseñas ordenadas por fecha DESC, paginadas
     Page<Review> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    // última reseña (por si en el futuro hay más de una por libro)
+    Optional<Review> findTopByBook_IdOrderByCreatedAtDesc(Long bookId);
+
+    // si querés todas las reseñas de ese libro:
+    List<Review> findByBook_IdOrderByCreatedAtDesc(Long bookId);
 
 }

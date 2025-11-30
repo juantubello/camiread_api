@@ -4,6 +4,7 @@ import net.casapipis.camireads.domain.model.Review;
 import net.casapipis.camireads.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -50,7 +51,6 @@ public class ReviewController {
         );
     }
 
-
     @GetMapping("/latest")
     public Page<Review> getLatestReviews(
             @RequestParam(defaultValue = "0") int page,
@@ -59,6 +59,13 @@ public class ReviewController {
         // aseguramos orden DESC por fecha, por las dudas
         var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         return reviewService.getLatestReviews(pageable);
+    }
+
+    @GetMapping("/book/{bookId}")
+    public ResponseEntity<Review> getReviewByBookId(@PathVariable Long bookId) {
+        return reviewService.getReviewByBookId(bookId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
 }

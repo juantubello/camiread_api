@@ -6,6 +6,7 @@ import net.casapipis.camireads.domain.repository.ReviewRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import java.util.Optional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -19,6 +20,14 @@ public class ReviewService {
     // 🔹 Nuevo método: últimas reseñas paginadas
     public Page<Review> getLatestReviews(Pageable pageable) {
         return reviewRepository.findAllByOrderByCreatedAtDesc(pageable);
+    }
+
+    public Optional<Review> getReviewByBookId(Long bookId) {
+        return reviewRepository.findTopByBook_IdOrderByCreatedAtDesc(bookId);
+    }
+
+    public List<Review> getReviewsByBookId(Long bookId) {
+        return reviewRepository.findByBook_IdOrderByCreatedAtDesc(bookId);
     }
 
     public List<Review> searchReviews(

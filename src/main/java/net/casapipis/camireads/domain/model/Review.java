@@ -3,6 +3,8 @@ package net.casapipis.camireads.domain.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.ArrayList;
 
 @Entity
 @Table(name = "reviews")
@@ -25,6 +27,10 @@ public class Review {
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
+
+    @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties({"review", "hibernateLazyInitializer", "handler"})
+    private List<ReviewQuote> quotes = new ArrayList<>();
 
     // --- getters y setters ---
 
@@ -67,4 +73,13 @@ public class Review {
     public void setCreatedAt(OffsetDateTime createdAt) {
         this.createdAt = createdAt;
     }
+
+    public List<ReviewQuote> getQuotes() {
+        return quotes;
+    }
+
+    public void setQuotes(List<ReviewQuote> quotes) {
+        this.quotes = quotes;
+    }
+
 }
