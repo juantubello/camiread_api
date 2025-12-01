@@ -4,17 +4,17 @@ import net.casapipis.camireads.domain.model.Review;
 import net.casapipis.camireads.dto.UpdateReviewRequest;
 import net.casapipis.camireads.service.ReviewService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
-import java.time.OffsetDateTime;
+import java.time.*;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
-@CrossOrigin(origins = "http://localhost:3000") // 👈 o "*" mientras desarrollás
+@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/reviews")
 @RequiredArgsConstructor
@@ -27,28 +27,51 @@ public class ReviewController {
             @RequestParam(required = false) String author,
             @RequestParam(required = false) String bookTitle,
             @RequestParam(required = false) Integer rating,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            OffsetDateTime reviewFrom,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            OffsetDateTime reviewTo,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            OffsetDateTime readFrom,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            OffsetDateTime readTo
+            @RequestParam(required = false) String reviewFrom,
+            @RequestParam(required = false) String reviewTo,
+            @RequestParam(required = false) String readFrom,
+            @RequestParam(required = false) String readTo
     ) {
+
+        OffsetDateTime reviewFromDate = parseDate(reviewFrom);
+        OffsetDateTime reviewToDate   = parseDate(reviewTo);
+        OffsetDateTime readFromDate   = parseDate(readFrom);
+        OffsetDateTime readToDate     = parseDate(readTo);
+
         return reviewService.searchReviews(
                 author,
                 bookTitle,
                 rating,
-                reviewFrom,
-                reviewTo,
-                readFrom,
-                readTo
+                reviewFromDate,
+                reviewToDate,
+                readFromDate,
+                readToDate
         );
+    }
+
+    /**
+     * Intenta parsear:
+     *  - primero como OffsetDateTime (ej: 2025-11-01T00:00:00-03:00)
+     *  - si falla, como LocalDate (ej: 2025-11-01) usando horario AR (-03:00)
+     */
+    private OffsetDateTime parseDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            // formato ISO completo con offset → 2025-11-01T00:00:00-03:00
+            return OffsetDateTime.parse(raw);
+        } catch (DateTimeParseException e1) {
+            try {
+                // solo fecha → 2025-11-01
+                LocalDate d = LocalDate.parse(raw);
+                ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
+                return d.atStartOfDay(zone).toOffsetDateTime();
+            } catch (DateTimeParseException e2) {
+                // si tampoco matchea LocalDate, ignoramos el filtro
+                return null;
+            }
+        }
     }
 
     @GetMapping("/latest")
@@ -56,7 +79,6 @@ public class ReviewController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        // aseguramos orden DESC por fecha, por las dudas
         var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         return reviewService.getLatestReviews(pageable);
     }
@@ -76,6 +98,4 @@ public class ReviewController {
         Review updated = reviewService.updateReview(bookId, request);
         return ResponseEntity.ok(updated);
     }
-
-
 }

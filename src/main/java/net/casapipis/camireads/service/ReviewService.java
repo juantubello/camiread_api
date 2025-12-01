@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +34,7 @@ public class ReviewService {
         Review review = reviewRepository.findTopByBook_IdOrderByCreatedAtDesc(bookId)
                 .orElseThrow(() -> new EntityNotFoundException("Review not found for book: " + bookId));
 
+        // Fechas de lectura del libro
         if (request.getStartReadDate() != null) {
             book.setStartReadDate(request.getStartReadDate());
         }
@@ -40,6 +42,7 @@ public class ReviewService {
             book.setEndReadDate(request.getEndReadDate());
         }
 
+        // Portada
         if (request.getUrlCover() != null) {
             String cover = request.getUrlCover().isBlank() ? null : request.getUrlCover();
             book.setUrlCover(cover);
@@ -48,6 +51,7 @@ public class ReviewService {
 
         bookRepository.save(book);
 
+        // Datos de la review
         if (request.getRating() != null) {
             review.setRating(request.getRating());
         }
@@ -55,6 +59,7 @@ public class ReviewService {
             review.setReviewText(request.getReviewText());
         }
 
+        // Quotes: borramos todas y volvemos a crear
         review.getQuotes().clear();
 
         if (request.getQuotes() != null) {
@@ -95,34 +100,67 @@ public class ReviewService {
             OffsetDateTime readTo
     ) {
 
-        boolean hasAuthor = author != null && !author.isBlank();
+        boolean hasAuthor   = author != null && !author.isBlank();
         boolean hasBookName = bookTitle != null && !bookTitle.isBlank();
-        boolean hasRating = rating != null;
+        boolean hasRating   = rating != null;
+
+        // 1) Filtro base por autor / título / rating (igual que antes)
+        List<Review> base;
 
         if (hasAuthor && hasBookName && hasRating) {
-            return reviewRepository.findByAuthorAndBookTitleAndRating(author, bookTitle, rating);
+            base = reviewRepository.findByAuthorAndBookTitleAndRating(author, bookTitle, rating);
+        } else if (hasAuthor && hasRating) {
+            base = reviewRepository.findByBook_AuthorContainingIgnoreCaseAndRating(author, rating);
+        } else if (hasBookName && hasRating) {
+            base = reviewRepository.findByBook_TitleContainingIgnoreCaseAndRating(bookTitle, rating);
+        } else if (hasRating) {
+            base = reviewRepository.findByRating(rating);
+        } else if (hasAuthor) {
+            base = reviewRepository.findByBook_AuthorContainingIgnoreCase(author);
+        } else if (hasBookName) {
+            base = reviewRepository.findByBook_TitleContainingIgnoreCase(bookTitle);
+        } else {
+            base = reviewRepository.findAll();
         }
 
-        if (hasAuthor && hasRating) {
-            return reviewRepository.findByBook_AuthorContainingIgnoreCaseAndRating(author, rating);
+        // 2) Filtro por fechas de lectura (start/end del BOOK)
+        if (readFrom == null && readTo == null) {
+            return base; // sin filtro de fechas
         }
 
-        if (hasBookName && hasRating) {
-            return reviewRepository.findByBook_TitleContainingIgnoreCaseAndRating(bookTitle, rating);
-        }
+        return base.stream()
+                .filter(review -> {
+                    OffsetDateTime start = review.getBook().getStartReadDate();
+                    OffsetDateTime end   = review.getBook().getEndReadDate();
 
-        if (hasRating) {
-            return reviewRepository.findByRating(rating);
-        }
+                    // --- Caso A: SOLO readFrom ---
+                    if (readFrom != null && readTo == null) {
+                        // Queremos: startReadDate >= readFrom
+                        if (start == null) return false;
+                        return !start.isBefore(readFrom); // start >= readFrom
+                    }
 
-        if (hasAuthor) {
-            return reviewRepository.findByBook_AuthorContainingIgnoreCase(author);
-        }
+                    // --- Caso B: SOLO readTo ---
+                    if (readFrom == null && readTo != null) {
+                        // Queremos: endReadDate <= readTo
+                        // Si no tenemos fecha de fin, no sabemos si terminó → lo excluimos
+                        if (end == null) return false;
+                        return !end.isAfter(readTo); // end <= readTo
+                    }
 
-        if (hasBookName) {
-            return reviewRepository.findByBook_TitleContainingIgnoreCase(bookTitle);
-        }
+                    // --- Caso C: readFrom Y readTo ---
+                    if (readFrom != null && readTo != null) {
+                        // Queremos libro COMPLETAMENTE entre el rango:
+                        // start >= readFrom  AND  end <= readTo
+                        if (start == null || end == null) return false;
+                        if (start.isBefore(readFrom)) return false; // start < readFrom → afuera
+                        if (end.isAfter(readTo)) return false;      // end > readTo → afuera
+                        return true;
+                    }
 
-        return reviewRepository.findAll();
+                    // fallback (no deberíamos llegar acá)
+                    return true;
+                })
+                .collect(Collectors.toList());
     }
 }
