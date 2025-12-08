@@ -1,20 +1,32 @@
 package net.casapipis.camireads.web.controller;
 
+import lombok.RequiredArgsConstructor;
 import net.casapipis.camireads.domain.model.Review;
+import net.casapipis.camireads.dto.NewReviewRequest;
 import net.casapipis.camireads.dto.UpdateReviewRequest;
 import net.casapipis.camireads.service.ReviewService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
 import java.time.*;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 
-@CrossOrigin(origins = "*")
+@CrossOrigin(
+        origins = "*",
+        allowedHeaders = "*",
+        methods = {
+                RequestMethod.GET,
+                RequestMethod.POST,
+                RequestMethod.PUT,
+                RequestMethod.DELETE,
+                RequestMethod.OPTIONS
+        }
+)
 @RestController
 @RequestMapping("/reviews")
 @RequiredArgsConstructor
@@ -47,6 +59,21 @@ public class ReviewController {
                 readFromDate,
                 readToDate
         );
+    }
+
+    @DeleteMapping("/book/{bookId}")
+    public ResponseEntity<Void> deleteBookAndReview(@PathVariable Long bookId) {
+        reviewService.deleteReviewAndBook(bookId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // 👉 Crear LIBRO + REVIEW nueva
+    @PostMapping
+    public ResponseEntity<Review> createReviewForNewBook(
+            @RequestBody NewReviewRequest request
+    ) {
+        Review created = reviewService.createReviewForNewBook(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     /**

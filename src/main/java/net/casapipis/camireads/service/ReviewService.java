@@ -12,11 +12,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import net.casapipis.camireads.dto.NewReviewRequest;
+import net.casapipis.camireads.domain.model.ReviewQuote;
+import java.time.ZoneId;
+import java.util.ArrayList;
+
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +28,78 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final BookRepository bookRepository;
+
+    @Transactional
+    public Review createReviewForNewBook(NewReviewRequest request) {
+
+        // Zona horaria Argentina
+        ZoneId zone = ZoneId.of("America/Argentina/Buenos_Aires");
+        OffsetDateTime nowAr = OffsetDateTime.now(zone);
+
+        // 1) Crear Book
+        Book book = new Book();
+        book.setTitle(request.getTitle());
+        book.setAuthor(request.getAuthor());
+
+        book.setStartReadDate(request.getStartReadDate());
+        book.setEndReadDate(request.getEndReadDate());
+
+        // fecha de creación del libro
+        book.setCreatedAt(nowAr);
+
+        // portada
+        String cover = (request.getUrlCover() == null || request.getUrlCover().isBlank())
+                ? null
+                : request.getUrlCover().trim();
+        book.setUrlCover(cover);
+        book.setHasUrlCover(cover != null);
+
+        bookRepository.save(book);
+
+        // 2) Crear Review
+        Review review = new Review();
+        review.setBook(book);
+        review.setRating(request.getRating());
+        review.setReviewText(request.getReviewText());
+        review.setCreatedAt(nowAr);
+
+        // 3) Quotes
+        var listQuotes = new ArrayList<ReviewQuote>();
+
+        if (request.getQuotes() != null) {
+            for (String q : request.getQuotes()) {
+                if (q == null || q.isBlank()) continue;
+
+                ReviewQuote rq = new ReviewQuote();
+                rq.setReview(review);
+                rq.setQuoteText(q);
+                rq.setCreatedAt(nowAr);
+
+                listQuotes.add(rq);
+            }
+        }
+
+        review.setQuotes(listQuotes);
+
+        return reviewRepository.save(review);
+    }
+
+    @Transactional
+    public void deleteReviewAndBook(Long bookId) {
+
+        Book book = bookRepository.findById(bookId)
+                .orElseThrow(() -> new EntityNotFoundException("Book not found: " + bookId));
+
+        // Borramos TODAS las reviews asociadas a ese libro
+        // (por si en el futuro permitís más de una)
+        var reviews = reviewRepository.findByBook_IdOrderByCreatedAtDesc(bookId);
+        if (!reviews.isEmpty()) {
+            reviewRepository.deleteAll(reviews);
+        }
+
+        // Y por último el libro
+        bookRepository.delete(book);
+    }
 
     @Transactional
     public Review updateReview(Long bookId, UpdateReviewRequest request) {
