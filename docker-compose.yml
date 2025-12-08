@@ -1,0 +1,13 @@
+services:
+  camireads-api:
+    build: ../be_camireads    # ruta hacia la carpeta del backend donde está el Dockerfile
+    container_name: camireads-api
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://192.168.1.87:5433/camireads
+      SPRING_DATASOURCE_USERNAME: camireads_user
+      SPRING_DATASOURCE_PASSWORD: camireads_pass
+      # si tenés perfiles:
+      # SPRING_PROFILES_ACTIVE: prod
+    ports:
+      - "9095:8080"
