@@ -67,6 +67,11 @@ public class ReviewController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/health")
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("OK");
+    }
+
     // 👉 Crear LIBRO + REVIEW nueva
     @PostMapping
     public ResponseEntity<Review> createReviewForNewBook(
