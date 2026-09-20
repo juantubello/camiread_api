@@ -68,4 +68,26 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     // si querés todas las reseñas de ese libro:
     List<Review> findByBook_IdOrderByCreatedAtDesc(Long bookId);
 
+    // ─────────────────────────────────────────────────────────────
+    // Tags / anti N+1
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * Misma pagina que findAllByOrderByCreatedAtDesc pero trayendo el libro
+     * en el mismo SELECT (JOIN FETCH sobre un @ManyToOne: es seguro paginar).
+     */
+    @Query(value = "select r from Review r join fetch r.book",
+           countQuery = "select count(r) from Review r")
+    Page<Review> findAllWithBook(Pageable pageable);
+
+    /**
+     * Segunda query del patron "dos queries": inicializa las quotes de un lote
+     * de reviews que ya estan en el persistence context. El resultado se ignora
+     * a proposito; lo que importa es el efecto sobre la sesion.
+     */
+    @Query("select distinct r from Review r left join fetch r.quotes where r.id in :ids")
+    List<Review> fetchQuotesForReviews(@Param("ids") java.util.Collection<Long> ids);
+
+    /** Reviews de un conjunto de libros (se usa para el filtro por tags). */
+    List<Review> findByBook_IdInOrderByCreatedAtDesc(java.util.Collection<Long> bookIds);
 }

@@ -3,6 +3,8 @@ package net.casapipis.camireads.domain.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "books")
@@ -34,6 +36,26 @@ public class Book {
 
     @Column(name = "b64_cover")
     private String b64Cover;
+
+    /**
+     * Tags del libro (los tags cuelgan del LIBRO, no de la resenia).
+     *
+     * Lado duenio de la relacion: la tabla puente book_tags. La columna
+     * created_at de book_tags la pone la base con su DEFAULT now(), por eso
+     * aca solo mapeamos las dos FKs.
+     *
+     * Campo ADITIVO en el JSON: aparece como "tags": [{id,name,slug,color}].
+     * Ningun campo existente cambia de nombre ni desaparece.
+     */
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "book_tags",
+            joinColumns = @JoinColumn(name = "book_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id")
+    )
+    @OrderBy("name ASC")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Set<Tag> tags = new LinkedHashSet<>();
 
     // --- Getters y Setters ---
 
@@ -107,5 +129,13 @@ public class Book {
 
     public void setB64Cover(String b64Cover) {
         this.b64Cover = b64Cover;
+    }
+
+    public Set<Tag> getTags() {
+        return tags;
+    }
+
+    public void setTags(Set<Tag> tags) {
+        this.tags = tags;
     }
 }

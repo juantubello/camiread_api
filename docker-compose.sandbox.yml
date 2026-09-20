@@ -1,0 +1,17 @@
+# API apuntando a la copia LOCAL de la base (puerto 5434), nunca a producción.
+# Stack aparte a propósito (no es override): evita sorpresas de merge de compose.
+# Levantar: docker compose -f docker-compose.sandbox.yml up -d --build
+services:
+  camireads-api-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: camireads-api-sandbox
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5434/camireads
+      SPRING_DATASOURCE_USERNAME: camireads_user
+      SPRING_DATASOURCE_PASSWORD: camireads_pass
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:9096:8080"

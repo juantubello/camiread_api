@@ -2,9 +2,12 @@ package net.casapipis.camireads.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import net.casapipis.camireads.domain.model.Review;
+import net.casapipis.camireads.dto.BookTagsResponse;
 import net.casapipis.camireads.dto.NewReviewRequest;
+import net.casapipis.camireads.dto.SetBookTagsRequest;
 import net.casapipis.camireads.dto.UpdateReviewRequest;
 import net.casapipis.camireads.service.ReviewService;
+import net.casapipis.camireads.service.TagService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.*;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 
 @CrossOrigin(
@@ -33,6 +37,7 @@ import java.util.List;
 public class ReviewController {
 
     private final ReviewService reviewService;
+    private final TagService tagService;
 
     @GetMapping
     public List<Review> searchReviews(
@@ -42,7 +47,12 @@ public class ReviewController {
             @RequestParam(required = false) String reviewFrom,
             @RequestParam(required = false) String reviewTo,
             @RequestParam(required = false) String readFrom,
-            @RequestParam(required = false) String readTo
+            @RequestParam(required = false) String readTo,
+            // 🔹 NUEVO (aditivo): filtro por tags, combinable con todo lo de arriba.
+            //    tagIds acepta "?tagIds=11,12" y también "?tagIds=11&tagIds=12".
+            //    tagMode: "any" (default) = alguno de esos tags | "all" = todos.
+            @RequestParam(required = false) List<String> tagIds,
+            @RequestParam(required = false, defaultValue = "any") String tagMode
     ) {
 
         OffsetDateTime reviewFromDate = parseDate(reviewFrom);
@@ -57,8 +67,44 @@ public class ReviewController {
                 reviewFromDate,
                 reviewToDate,
                 readFromDate,
-                readToDate
+                readToDate,
+                parseTagIds(tagIds),
+                "all".equalsIgnoreCase(tagMode == null ? "" : tagMode.trim())
         );
+    }
+
+    /**
+     * PUT /reviews/book/{bookId}/tags
+     * Reemplaza el conjunto de tags del libro. Los newTagNames se crean o se
+     * reusan si el slug ya existe.
+     */
+    @PutMapping("/book/{bookId}/tags")
+    public BookTagsResponse setBookTags(
+            @PathVariable Long bookId,
+            @RequestBody SetBookTagsRequest request
+    ) {
+        return tagService.setBookTags(bookId, request);
+    }
+
+    /** Tolerante: ignora vacíos y valores no numéricos en vez de tirar 400. */
+    private List<Long> parseTagIds(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String chunk : raw) {
+            if (chunk == null || chunk.isBlank()) continue;
+            for (String piece : chunk.split(",")) {
+                String s = piece.trim();
+                if (s.isEmpty()) continue;
+                try {
+                    ids.add(Long.parseLong(s));
+                } catch (NumberFormatException ignored) {
+                    // un id basura no debe romper toda la búsqueda
+                }
+            }
+        }
+        return ids;
     }
 
     @DeleteMapping("/book/{bookId}")

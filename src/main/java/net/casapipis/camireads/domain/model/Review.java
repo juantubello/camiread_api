@@ -28,7 +28,12 @@ public class Review {
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
 
+    // @OrderBy: antes las frases salían en el orden físico de la tabla (arbitrario,
+    // cambia solo con un VACUUM). Ahora salen siempre por id ascendente = orden en
+    // que se cargaron. Hace falta para que el orden no dependa de si la colección
+    // se trae con JOIN FETCH en lote o lazy de a una.
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
     @JsonIgnoreProperties({"review", "hibernateLazyInitializer", "handler"})
     private List<ReviewQuote> quotes = new ArrayList<>();
 

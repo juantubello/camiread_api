@@ -1,3 +1,5 @@
+# ⚠️  ESTE COMPOSE APUNTA A LA BASE DE PRODUCCIÓN (192.168.1.87:5433).
+# ⚠️  Para desarrollo local usá docker-compose.sandbox.yml (base copia en :5434).
 services:
   camireads-api:
     build:
