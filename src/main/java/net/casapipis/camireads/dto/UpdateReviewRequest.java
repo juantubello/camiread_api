@@ -5,6 +5,23 @@ import java.util.List;
 
 public class UpdateReviewRequest {
 
+    /**
+     * Titulo nuevo del LIBRO. OPCIONAL y ADITIVO.
+     *
+     * Si llega null o directamente ausente en el JSON, el titulo no se toca:
+     * el front que corre hoy en produccion manda este PUT sin title ni author
+     * y tiene que seguir funcionando igual.
+     *
+     * Si llega presente pero vacio o en blanco -> 400 (un libro no puede
+     * quedarse sin titulo).
+     */
+    private String title;
+
+    /**
+     * Autor nuevo del LIBRO. OPCIONAL y ADITIVO. Mismas reglas que title.
+     */
+    private String author;
+
     private OffsetDateTime startReadDate;
     private OffsetDateTime endReadDate;
 
@@ -14,6 +31,22 @@ public class UpdateReviewRequest {
     private List<String> quotes;
 
     private String urlCover;
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getAuthor() {
+        return author;
+    }
+
+    public void setAuthor(String author) {
+        this.author = author;
+    }
 
     public OffsetDateTime getStartReadDate() {
         return startReadDate;

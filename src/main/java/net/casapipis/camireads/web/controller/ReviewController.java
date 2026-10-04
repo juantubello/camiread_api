@@ -161,11 +161,16 @@ public class ReviewController {
         return reviewService.getLatestReviews(pageable);
     }
 
+    /**
+     * GET /reviews/book/{bookId}
+     *
+     * Sigue siendo 404 cuando el libro no existe, pero ahora con un mensaje
+     * legible en el body (el front lo muestra con readApiError) en vez de un
+     * 404 pelado. Mismo 404 que devuelven el PUT y el DELETE de esta ruta.
+     */
     @GetMapping("/book/{bookId}")
-    public ResponseEntity<Review> getReviewByBookId(@PathVariable Long bookId) {
-        return reviewService.getReviewByBookId(bookId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    public Review getReviewByBookId(@PathVariable Long bookId) {
+        return reviewService.getReviewByBookIdOrFail(bookId);
     }
 
     @PutMapping("/book/{bookId}")
