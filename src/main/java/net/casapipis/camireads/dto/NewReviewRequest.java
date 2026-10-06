@@ -2,6 +2,7 @@ package net.casapipis.camireads.dto;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -15,7 +16,8 @@ public class NewReviewRequest {
     private OffsetDateTime startReadDate;
     private OffsetDateTime endReadDate;
 
-    private Integer rating;
+    /** 0 (sin calificar) o 0.25..5 en pasos de 0.25. Lo valida ReviewService. */
+    private BigDecimal rating;
     private String reviewText;
 
     private List<String> quotes;

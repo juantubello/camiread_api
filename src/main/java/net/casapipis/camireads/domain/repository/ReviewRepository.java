@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import java.math.BigDecimal;
 import java.util.Optional;
 
 import java.util.List;
@@ -27,21 +28,77 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             @Param("bookTitle") String bookTitle
     );
 
-    // 🔹 Búsqueda combinada: author + bookTitle + rating
+    // ─────────────────────────────────────────────────────────────
+    // Filtro por puntaje (Fase 9, cuartos de estrella)
+    // ─────────────────────────────────────────────────────────────
+    //
+    // Desde que rating es numeric(3,2), el filtro "N estrellas" ya no puede
+    // ser `rating = N`: un 3.75 no apareceria NUNCA en ninguna busqueda. Ahora
+    // es un rango [min, max), o igualdad exacta cuando exact = true (el 0 de
+    // "sin calificar" y el 5). El rango lo arma ReviewService.ratingRange(),
+    // en UN solo lugar para todos los caminos de busqueda.
+    //
+    // Con exact = true se pasa max = min, asi la segunda mitad del OR queda
+    // vacia y solo matchea la igualdad.
+
+    // 🔹 Búsqueda combinada: author + bookTitle + rango de rating
     @Query(value = """
         SELECT r.*
         FROM reviews r
         JOIN books b ON b.id = r.book_id
         WHERE LOWER(b.author) LIKE LOWER(CONCAT('%', :author, '%'))
           AND LOWER(b.title)  LIKE LOWER(CONCAT('%', :bookTitle, '%'))
-          AND r.rating = :rating
+          AND ((:exact AND r.rating = :min)
+               OR (r.rating >= :min AND r.rating < :max))
         ORDER BY r.created_at DESC
         """,
             nativeQuery = true)
-    List<Review> findByAuthorAndBookTitleAndRating(
+    List<Review> findByAuthorAndBookTitleAndRatingRange(
             @Param("author") String author,
             @Param("bookTitle") String bookTitle,
-            @Param("rating") int rating
+            @Param("min") BigDecimal min,
+            @Param("max") BigDecimal max,
+            @Param("exact") boolean exact
+    );
+
+    // 🔹 Solo rango de rating
+    @Query("""
+        select r from Review r
+        where (:exact = true and r.rating = :min)
+           or (r.rating >= :min and r.rating < :max)
+        """)
+    List<Review> findByRatingRange(
+            @Param("min") BigDecimal min,
+            @Param("max") BigDecimal max,
+            @Param("exact") boolean exact
+    );
+
+    // 🔹 autor + rango de rating
+    @Query("""
+        select r from Review r join r.book b
+        where lower(b.author) like lower(concat('%', :author, '%'))
+          and ((:exact = true and r.rating = :min)
+               or (r.rating >= :min and r.rating < :max))
+        """)
+    List<Review> findByAuthorAndRatingRange(
+            @Param("author") String author,
+            @Param("min") BigDecimal min,
+            @Param("max") BigDecimal max,
+            @Param("exact") boolean exact
+    );
+
+    // 🔹 título + rango de rating
+    @Query("""
+        select r from Review r join r.book b
+        where lower(b.title) like lower(concat('%', :bookTitle, '%'))
+          and ((:exact = true and r.rating = :min)
+               or (r.rating >= :min and r.rating < :max))
+        """)
+    List<Review> findByTitleAndRatingRange(
+            @Param("bookTitle") String bookTitle,
+            @Param("min") BigDecimal min,
+            @Param("max") BigDecimal max,
+            @Param("exact") boolean exact
     );
 
     // 🔹 Solo autor
@@ -49,15 +106,6 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     // 🔹 Solo título
     List<Review> findByBook_TitleContainingIgnoreCase(String bookTitle);
-
-    // 🔹 Solo rating
-    List<Review> findByRating(int rating);
-
-    // 🔹 autor + rating
-    List<Review> findByBook_AuthorContainingIgnoreCaseAndRating(String author, int rating);
-
-    // 🔹 título + rating
-    List<Review> findByBook_TitleContainingIgnoreCaseAndRating(String bookTitle, int rating);
 
     // 🔹 Últimas reseñas ordenadas por fecha DESC, paginadas
     Page<Review> findAllByOrderByCreatedAtDesc(Pageable pageable);

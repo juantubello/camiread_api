@@ -77,19 +77,34 @@ public interface StatsRepository extends Repository<Book, Long> {
      * Query 2/8 — histograma de puntajes, 6 filas (0 a 5).
      *
      * De aca salen TRES numeros sin queries extra: el total de resenias, las
-     * "sin calificar" (rating 0) y el promedio real. El promedio se calcula en
-     * Java como media ponderada de 6 baldes, que da exactamente lo mismo que
-     * un AVG en SQL pero sin una segunda pasada por la tabla.
+     * "sin calificar" (rating 0) y el promedio real. Cada balde trae, ademas
+     * de cuantas resenias tiene, la SUMA de sus puntajes: el promedio se arma
+     * en Java como sum(ratingSum) / rated, que da exactamente lo mismo que un
+     * AVG en SQL pero sin una segunda pasada por la tabla.
+     *
+     * Fase 9 (cuartos de estrella): el balde es el PISO del puntaje, con 1
+     * como minimo para las calificadas: 3.75 cuenta en 3★ y 0.5 en 1★ (no en
+     * "sin calificar", que es solo el 0 exacto). Es la misma regla que el
+     * filtro ?rating=N del buscador, asi el histograma y la busqueda nunca
+     * se contradicen. La suma va por el puntaje REAL (3.75), no por el balde.
+     *
+     * El generate_series(0, 5) esta para que los 6 baldes aparezcan siempre,
+     * aunque alguno quede en cero (igual que los 12 meses de la query 4).
      *
      * ⚠️ rating = 0 significa "SIN CALIFICAR" en esta app, no "malisimo": son
-     * 702 resenias. Meterlas en el promedio lo hundiria de 3,77 a 2,41 y seria
+     * ~700 resenias. Meterlas en el promedio lo hundiria de 3,77 a 2,41 y seria
      * una mentira. Se cuentan aparte, nunca se promedian.
      */
     @Query(value = """
-            SELECT rating AS "rating", count(*) AS "amount"
-            FROM reviews
-            GROUP BY rating
-            ORDER BY rating
+            SELECT s.bucket                          AS "rating",
+                   count(r.rating)                   AS "amount",
+                   coalesce(sum(r.rating), 0)        AS "ratingSum"
+            FROM generate_series(0, 5) AS s(bucket)
+            LEFT JOIN reviews r
+                   ON (CASE WHEN r.rating = 0 THEN 0
+                            ELSE greatest(1, floor(r.rating))::int END) = s.bucket
+            GROUP BY s.bucket
+            ORDER BY s.bucket
             """, nativeQuery = true)
     List<RatingBucketView> ratingHistogram();
 

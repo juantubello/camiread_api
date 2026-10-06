@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -82,12 +83,14 @@ class StatsServiceDbTest {
         assertEquals(sql("SELECT count(*) FROM reviews WHERE rating > 0"), r.rated());
 
         // El promedio de la app tiene que ser el AVG de la base SOLO sobre las
-        // calificadas.
-        Double avgSql = jdbc.queryForObject(
-                "SELECT avg(rating) FROM reviews WHERE rating > 0", Double.class);
+        // calificadas, redondeado a 2 decimales. El redondeo lo hace Postgres
+        // (numeric, HALF_UP) para no comparar contra un double que ya perdio
+        // precision.
+        BigDecimal avgSql = jdbc.queryForObject(
+                "SELECT round(avg(rating), 2) FROM reviews WHERE rating > 0", BigDecimal.class);
         assertNotNull(avgSql);
         assertNotNull(r.average());
-        assertEquals(Math.round(avgSql * 100d) / 100d, r.average(), 0.0001);
+        assertEquals(avgSql.doubleValue(), r.average(), 0.0001);
 
         // Y tiene que ser DISTINTO de meter los ceros adentro: si alguien
         // "simplifica" el calculo a un AVG pelado, este assert lo caza.
@@ -100,9 +103,20 @@ class StatsServiceDbTest {
         assertEquals(6, r.distribution().size());
         assertEquals(sql("SELECT count(*) FROM reviews"),
                 r.distribution().stream().mapToLong(StatsResponse.RatingBucket::amount).sum());
+
+        // Fase 9: cada balde es el PISO del puntaje, con 1 de minimo para las
+        // calificadas (3.75 -> 3, 0.5 -> 1). El 0 es solo el 0 exacto. Se
+        // escribe como rangos (no con floor/greatest como la query de la app)
+        // para que el test no copie la misma formula que esta probando.
         for (StatsResponse.RatingBucket b : r.distribution()) {
-            assertEquals(sql("SELECT count(*) FROM reviews WHERE rating = ?", b.rating()),
-                    b.amount(), "escalon " + b.rating());
+            long esperado = switch (b.rating()) {
+                case 0 -> sql("SELECT count(*) FROM reviews WHERE rating = 0");
+                case 1 -> sql("SELECT count(*) FROM reviews WHERE rating > 0 AND rating < 2");
+                case 5 -> sql("SELECT count(*) FROM reviews WHERE rating = 5");
+                default -> sql("SELECT count(*) FROM reviews WHERE rating >= ? AND rating < ?",
+                        b.rating(), b.rating() + 1);
+            };
+            assertEquals(esperado, b.amount(), "escalon " + b.rating());
         }
     }
 

@@ -1,5 +1,6 @@
 package net.casapipis.camireads.dto;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -25,7 +26,8 @@ public class UpdateReviewRequest {
     private OffsetDateTime startReadDate;
     private OffsetDateTime endReadDate;
 
-    private Integer rating;
+    /** null = no tocar. Si viene: 0 o 0.25..5 en pasos de 0.25 (lo valida ReviewService). */
+    private BigDecimal rating;
     private String reviewText;
 
     private List<String> quotes;
@@ -64,11 +66,11 @@ public class UpdateReviewRequest {
         this.endReadDate = endReadDate;
     }
 
-    public Integer getRating() {
+    public BigDecimal getRating() {
         return rating;
     }
 
-    public void setRating(Integer rating) {
+    public void setRating(BigDecimal rating) {
         this.rating = rating;
     }
 

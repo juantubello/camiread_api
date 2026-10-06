@@ -14,6 +14,8 @@ import net.casapipis.camireads.web.projection.YearCountView;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -115,31 +117,38 @@ public class StatsService {
     /**
      * Promedio de puntaje SIN las resenias en 0.
      *
-     * rating = 0 es "sin calificar" en esta app, no "malisimo": son 702 de 1946.
-     * Promediarlas bajaria la nota de 3,77 a 2,41 e inventaria una insatisfaccion
-     * que nunca existio. Van contadas aparte, en `unrated`.
+     * rating = 0 es "sin calificar" en esta app, no "malisimo": son ~700 de
+     * ~1950. Promediarlas bajaria la nota de 3,77 a 2,41 e inventaria una
+     * insatisfaccion que nunca existio. Van contadas aparte, en `unrated`.
      *
-     * El promedio sale como media ponderada del histograma que ya trajimos
-     * (6 baldes), asi que da identico a un AVG en SQL sin una query extra.
+     * El promedio sale de las sumas por balde que ya trajimos (6 filas), asi
+     * que da identico a un AVG en SQL sin una query extra. Se hace en
+     * BigDecimal (los puntajes son cuartos exactos) y recien al final se
+     * redondea a 2 decimales: con cuartos de estrella el promedio ya no es
+     * "3.8 y algo", y el segundo decimal dice algo.
      */
     private StatsResponse.Ratings ratings(List<RatingBucketView> histogram) {
 
         long rated = 0;
         long unrated = 0;
-        long weightedSum = 0;
+        BigDecimal ratedSum = BigDecimal.ZERO;
 
         for (RatingBucketView bucket : histogram) {
             if (bucket.getRating() == 0) {
                 unrated += bucket.getAmount();
             } else {
                 rated += bucket.getAmount();
-                weightedSum += (long) bucket.getRating() * bucket.getAmount();
+                if (bucket.getRatingSum() != null) {
+                    ratedSum = ratedSum.add(bucket.getRatingSum());
+                }
             }
         }
 
         // null y no 0: "todavia no calificó nada" no es lo mismo que
         // "su promedio es cero".
-        Double average = rated == 0 ? null : round2((double) weightedSum / rated);
+        Double average = rated == 0
+                ? null
+                : ratedSum.divide(BigDecimal.valueOf(rated), 2, RoundingMode.HALF_UP).doubleValue();
 
         List<StatsResponse.RatingBucket> distribution = histogram.stream()
                 .map(b -> new StatsResponse.RatingBucket(b.getRating(), b.getAmount()))
@@ -201,9 +210,5 @@ public class StatsService {
 
     private static double round1(double value) {
         return Math.round(value * 10d) / 10d;
-    }
-
-    private static double round2(double value) {
-        return Math.round(value * 100d) / 100d;
     }
 }

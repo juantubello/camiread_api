@@ -14,6 +14,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -203,7 +205,7 @@ public class ReviewService {
         // borrar lo que Camila escribio. Mandar "" SI vacia el texto, y ahi la
         // columna queda en cadena vacia (nunca null: review_text es NOT NULL).
         if (request.getRating() != null) {
-            review.setRating(checkRatingRange(request.getRating()));
+            review.setRating(checkRating(request.getRating()));
         }
         if (request.getReviewText() != null) {
             review.setReviewText(request.getReviewText());
@@ -362,24 +364,69 @@ public class ReviewService {
         return raw == null ? "" : raw;
     }
 
-    /** reviews.rating es NOT NULL con CHECK (rating >= 0 AND rating <= 5). */
-    private int requireRating(Integer raw) {
+    /**
+     * reviews.rating es numeric(3,2) NOT NULL con
+     * CHECK (rating >= 0 AND rating <= 5 AND rating * 4 = trunc(rating * 4)).
+     */
+    private BigDecimal requireRating(BigDecimal raw) {
         if (raw == null) {
-            // Sin esto era un NullPointerException al desempaquetar el Integer
-            // en el int de Review.rating => 500 pelado.
+            // Sin esto el INSERT reventaba la NOT NULL de reviews.rating => 500.
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Falta el puntaje de la reseña (tiene que ser un número del 0 al 5)");
         }
-        return checkRatingRange(raw);
+        return checkRating(raw);
     }
 
-    /** Valida el CHECK de la base antes de que lo valide Postgres con un 500. */
-    private int checkRatingRange(int rating) {
-        if (rating < 0 || rating > 5) {
+    private static final BigDecimal FOUR = BigDecimal.valueOf(4);
+    private static final BigDecimal FIVE = BigDecimal.valueOf(5);
+
+    /**
+     * Valida el CHECK de la base antes de que lo valide Postgres con un 500:
+     * entre 0 y 5 y en pasos de 0.25 (0 = "sin calificar", 0.25 es el minimo
+     * calificable). Devuelve el valor normalizado a escala 2, que es la de la
+     * columna: asi "3.5", "3.50" y "3.500" se guardan y se devuelven igual.
+     */
+    private BigDecimal checkRating(BigDecimal rating) {
+        // multiplicar por 4 y ver que quede entero es exactamente la regla del
+        // CHECK; con BigDecimal no hay redondeo de por medio (3.3 * 4 = 13.2).
+        boolean inRange = rating.signum() >= 0 && rating.compareTo(FIVE) <= 0;
+        boolean isQuarter = rating.multiply(FOUR).stripTrailingZeros().scale() <= 0;
+        if (!inRange || !isQuarter) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "El puntaje tiene que estar entre 0 y 5 (llegó " + rating + ")");
+                    "El puntaje tiene que ser un número entre 0 y 5 en pasos de 0,25 "
+                            + "(ej. 3, 3.25, 3.5, 3.75); llegó " + rating.toPlainString());
         }
-        return rating;
+        // Despues del chequeo de cuartos, a escala 2 nunca hay que redondear.
+        return rating.setScale(2, RoundingMode.UNNECESSARY);
+    }
+
+    /**
+     * El filtro "N estrellas" del buscador (Fase 9). Un solo lugar que traduce
+     * N a un rango, para que todos los caminos de searchReviews (con o sin
+     * autor/titulo/tags) filtren EXACTAMENTE igual.
+     *
+     * - 0  -> rating = 0 exacto ("sin calificar").
+     * - 1  -> [0.25, 2): los 0.25..0.75 caen en 1★, no en "sin calificar".
+     *         0.25 es el minimo calificable (el CHECK obliga a cuartos), asi
+     *         que ">= 0.25" es lo mismo que "> 0".
+     * - 2..4 -> [N, N+1): 4★ incluye 4.00..4.75 (decision de Juan, 2026-10-06).
+     * - 5  -> rating = 5 exacto.
+     *
+     * Para los exactos, max = min: la mitad "rango" de la query queda vacia.
+     */
+    record RatingRange(BigDecimal min, BigDecimal max, boolean exact) {}
+
+    static RatingRange ratingRange(int stars) {
+        if (stars < 0 || stars > 5) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "El filtro de puntaje tiene que ser un número entero del 0 al 5 (llegó " + stars + ")");
+        }
+        if (stars == 0 || stars == 5) {
+            BigDecimal exact = BigDecimal.valueOf(stars).setScale(2);
+            return new RatingRange(exact, exact, true);
+        }
+        BigDecimal min = stars == 1 ? new BigDecimal("0.25") : BigDecimal.valueOf(stars).setScale(2);
+        return new RatingRange(min, BigDecimal.valueOf(stars + 1L).setScale(2), false);
     }
 
     /** Mismo 409 para los dos caminos: chequeo previo y violacion del indice unico. */
@@ -506,6 +553,10 @@ public class ReviewService {
         boolean hasRating   = rating != null;
         boolean hasTags     = tagIds != null && !tagIds.isEmpty();
 
+        // El rango se calcula (y se valida, 400 si N no es 0..5) ANTES de
+        // cualquier query, incluida la de tags.
+        RatingRange range = hasRating ? ratingRange(rating) : null;
+
         // 0) Filtro por tags: una sola query sobre book_tags (tabla chica),
         //    que devuelve los book_id que matchean.
         Set<Long> allowedBookIds = null;
@@ -516,20 +567,23 @@ public class ReviewService {
             }
         }
 
-        // 1) Filtro base por autor / título / rating (igual que antes)
+        // 1) Filtro base por autor / título / rango de rating
         List<Review> base;
 
         if (hasTags && !hasAuthor && !hasBookName && !hasRating) {
             // Solo tags: vamos derecho por book_id en vez de traer las 1946 resenias.
             base = reviewRepository.findByBook_IdInOrderByCreatedAtDesc(allowedBookIds);
         } else if (hasAuthor && hasBookName && hasRating) {
-            base = reviewRepository.findByAuthorAndBookTitleAndRating(author, bookTitle, rating);
+            base = reviewRepository.findByAuthorAndBookTitleAndRatingRange(
+                    author, bookTitle, range.min(), range.max(), range.exact());
         } else if (hasAuthor && hasRating) {
-            base = reviewRepository.findByBook_AuthorContainingIgnoreCaseAndRating(author, rating);
+            base = reviewRepository.findByAuthorAndRatingRange(
+                    author, range.min(), range.max(), range.exact());
         } else if (hasBookName && hasRating) {
-            base = reviewRepository.findByBook_TitleContainingIgnoreCaseAndRating(bookTitle, rating);
+            base = reviewRepository.findByTitleAndRatingRange(
+                    bookTitle, range.min(), range.max(), range.exact());
         } else if (hasRating) {
-            base = reviewRepository.findByRating(rating);
+            base = reviewRepository.findByRatingRange(range.min(), range.max(), range.exact());
         } else if (hasAuthor) {
             base = reviewRepository.findByBook_AuthorContainingIgnoreCase(author);
         } else if (hasBookName) {

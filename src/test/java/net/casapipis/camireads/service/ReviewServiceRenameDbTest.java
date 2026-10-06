@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -121,12 +122,12 @@ class ReviewServiceRenameDbTest {
 
         // Exactamente lo que manda hoy el front: rating + texto, sin title/author.
         UpdateReviewRequest req = new UpdateReviewRequest();
-        req.setRating(4);
+        req.setRating(new BigDecimal("4"));
         req.setReviewText("resenia editada desde el front viejo");
 
         Review updated = reviewService.updateReview(bookId, req);
 
-        assertEquals(4, updated.getRating());
+        assertEquals(new BigDecimal("4.00"), updated.getRating());
         assertEquals(titulo, titleOf(bookId), "el titulo no se tenia que tocar");
         assertEquals(autor, authorOf(bookId), "el autor no se tenia que tocar");
     }

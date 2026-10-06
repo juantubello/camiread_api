@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -103,7 +104,7 @@ class ReviewServiceErrorsDbTest {
         assertNotNull(created.getId());
         assertEquals("", created.getReviewText(), "sin texto se guarda como cadena vacia");
         assertEquals("", reviewTextOf(created.getId()), "y asi queda en la base, no null");
-        assertEquals(4, created.getRating(), "el puntaje si se guarda: el libro queda puntuado");
+        assertEquals(new BigDecimal("4.00"), created.getRating(), "el puntaje si se guarda: el libro queda puntuado");
     }
 
     @Test
@@ -144,7 +145,7 @@ class ReviewServiceErrorsDbTest {
         Review created = track(reviewService.createReviewForNewBook(alta));
 
         UpdateReviewRequest soloPuntaje = new UpdateReviewRequest();
-        soloPuntaje.setRating(5);
+        soloPuntaje.setRating(new BigDecimal("5"));
         reviewService.updateReview(created.getBook().getId(), soloPuntaje);
 
         assertEquals("texto original", reviewTextOf(created.getId()),
@@ -209,7 +210,7 @@ class ReviewServiceErrorsDbTest {
     @DisplayName("BUG 2: PUT a un libro inexistente da 404 con mensaje, no 500")
     void putALibroInexistenteDa404() {
         UpdateReviewRequest req = new UpdateReviewRequest();
-        req.setRating(5);
+        req.setRating(new BigDecimal("5"));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> reviewService.updateReview(ID_INEXISTENTE, req));
@@ -269,7 +270,7 @@ class ReviewServiceErrorsDbTest {
         NewReviewRequest req = new NewReviewRequest();
         req.setTitle(titulo);
         req.setAuthor("Autor Test " + sufijo);
-        req.setRating(4);
+        req.setRating(new BigDecimal("4"));
         req.setReviewText("resenia de prueba");
         return req;
     }

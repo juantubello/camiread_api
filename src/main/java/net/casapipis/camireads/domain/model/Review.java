@@ -2,6 +2,7 @@ package net.casapipis.camireads.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.ArrayList;
@@ -20,7 +21,13 @@ public class Review {
     @JoinColumn(name = "book_id", nullable = false)
     private Book book;
 
-    private int rating;  // 0–5
+    // numeric(3,2) en la base (Fase 9, cuartos de estrella): 0 = "sin
+    // calificar", calificado = 0.25..5 en pasos de 0.25 (lo garantiza un CHECK).
+    // BigDecimal y no double: 3.25 tiene que ir y volver EXACTO, y la
+    // comparacion contra el CHECK (rating * 4 = trunc(rating * 4)) no perdona
+    // un 3.2499999.
+    @Column(nullable = false, precision = 3, scale = 2)
+    private BigDecimal rating;
 
     @Column(name = "review_text", columnDefinition = "text")
     private String reviewText;
@@ -55,11 +62,11 @@ public class Review {
         this.book = book;
     }
 
-    public int getRating() {
+    public BigDecimal getRating() {
         return rating;
     }
 
-    public void setRating(int rating) {
+    public void setRating(BigDecimal rating) {
         this.rating = rating;
     }
 

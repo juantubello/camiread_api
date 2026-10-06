@@ -63,8 +63,12 @@ public record StatsResponse(
      * calcula solo sobre las `rated`. Si no hubiera ninguna calificada,
      * average viene null (no 0, que se leeria como "le pusieron cero").
      *
+     * average va redondeado a 2 decimales (con cuartos de estrella el segundo
+     * decimal ya dice algo).
+     *
      * distribution trae los 6 escalones, el 0 incluido, para poder dibujar el
-     * histograma completo.
+     * histograma completo. Desde la Fase 9 cada escalon es el PISO del puntaje
+     * (3.75 cuenta en 3, 0.5 en 1); el 0 es solo "sin calificar".
      */
     public record Ratings(
             Double average,
