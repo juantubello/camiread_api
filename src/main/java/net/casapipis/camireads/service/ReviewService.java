@@ -1,6 +1,7 @@
 package net.casapipis.camireads.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.casapipis.camireads.domain.model.Book;
 import net.casapipis.camireads.domain.model.Review;
 import net.casapipis.camireads.domain.model.ReviewQuote;
@@ -13,6 +14,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,6 +32,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReviewService {
@@ -42,6 +46,7 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final BookRepository bookRepository;
     private final TagService tagService;
+    private final SagaAutoService sagaAutoService;
 
     /**
      * POST /reviews — crea el LIBRO y su primera resenia.
@@ -104,6 +109,10 @@ public class ReviewService {
             // un libro con ese mismo (title, author).
             throw titleAuthorConflict(title, author, null);
         }
+
+        // Fase 10b: si el titulo trae una saga que el armado ya conoce, el
+        // libro se suma solo al final de esa saga (despues del commit).
+        attachToSagaAfterCommit(book.getId());
 
         // 2) Crear Review
         Review review = new Review();
@@ -179,7 +188,10 @@ public class ReviewService {
 
         // Titulo / autor del libro (opcionales). Va primero para que, si hay
         // colision, salga el 409 antes de tocar quotes o datos de la resenia.
-        applyTitleAndAuthor(book, request);
+        if (applyTitleAndAuthor(book, request)) {
+            // Renombrado: el titulo nuevo puede traer una saga mapeada.
+            attachToSagaAfterCommit(book.getId());
+        }
 
         // Fechas de lectura del libro
         if (request.getStartReadDate() != null) {
@@ -254,10 +266,10 @@ public class ReviewService {
      * flush. Los dos caminos terminan en el mismo 409: nunca en un 500 con
      * stack trace de Hibernate.
      */
-    private void applyTitleAndAuthor(Book book, UpdateReviewRequest request) {
+    private boolean applyTitleAndAuthor(Book book, UpdateReviewRequest request) {
 
         if (request == null) {
-            return;
+            return false;
         }
 
         String rawTitle = request.getTitle();
@@ -265,7 +277,7 @@ public class ReviewService {
 
         // Ninguno de los dos vino: el PUT es el de siempre, no hay nada que hacer.
         if (rawTitle == null && rawAuthor == null) {
-            return;
+            return false;
         }
 
         String newTitle = rawTitle == null ? book.getTitle() : cleanBookField(rawTitle, "título");
@@ -273,8 +285,9 @@ public class ReviewService {
 
         // Sin cambios reales: no es error, simplemente no hacemos nada.
         if (Objects.equals(newTitle, book.getTitle()) && Objects.equals(newAuthor, book.getAuthor())) {
-            return;
+            return false;
         }
+        boolean titleChanged = !Objects.equals(newTitle, book.getTitle());
 
         Optional<Book> clash =
                 bookRepository.findFirstByTitleAndAuthorAndIdNot(newTitle, newAuthor, book.getId());
@@ -294,6 +307,47 @@ public class ReviewService {
             // Carrera: entre el chequeo de arriba y el flush, otro request creo
             // o renombro un libro a ese mismo (title, author).
             throw titleAuthorConflict(newTitle, newAuthor, null);
+        }
+        return titleChanged;
+    }
+
+    /**
+     * Fase 10b: suma el libro a la saga que su titulo indica, si el armado
+     * automatico ya la conoce (saga_series_keys). Ver SagaAutoService.attachToMappedSaga.
+     *
+     * POR QUE DESPUES DEL COMMIT (y no con un savepoint dentro del alta):
+     *   - Lo prioritario es que la reseña se guarde. Corriendo en afterCommit,
+     *     NINGUN problema de la saga (un lock que tarda, un error de SQL, un
+     *     bug) puede tumbar ni demorar el alta: ya esta commiteada.
+     *   - Con savepoint habria que mezclar el savepoint JDBC con la sesion de
+     *     Hibernate del alta, y el alta quedaria esperando el FOR UPDATE de la
+     *     saga si Camila la esta editando en otra pestaña.
+     *   - El costo: si el server se cae justo entre el commit y este paso, el
+     *     libro queda sin saga. No se pierde nada: el proximo "Armar sagas"
+     *     lo suma (regla 2 del armado).
+     * El fallo se loguea y se sigue: la reseña ya esta.
+     */
+    private void attachToSagaAfterCommit(Long bookId) {
+        if (bookId == null) {
+            return;
+        }
+        Runnable attach = () -> {
+            try {
+                sagaAutoService.attachToMappedSaga(bookId);
+            } catch (RuntimeException e) {
+                log.warn("No se pudo sumar el libro {} a su saga automatica (la reseña quedo guardada igual)",
+                        bookId, e);
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    attach.run();
+                }
+            });
+        } else {
+            attach.run();
         }
     }
 

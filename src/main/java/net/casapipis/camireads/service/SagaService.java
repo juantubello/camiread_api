@@ -42,7 +42,9 @@ import java.util.Set;
  * ACA primero, para contestar 400/409 en castellano y no un 500 con el SQL.
  *
  * Ninguna sentencia de esta clase escribe en books ni en reviews: solo
- * sagas y saga_books.
+ * sagas, saga_books y (Fase 10b) la memoria del armado automatico
+ * (saga_series_keys, saga_book_dismissed). El armado en si vive en
+ * SagaAutoService.
  */
 @Service
 @RequiredArgsConstructor
@@ -77,7 +79,7 @@ public class SagaService {
     @Transactional(readOnly = true)
     public List<SagaSummary> list() {
         List<SagaRow> sagas = jdbc.query("""
-                SELECT s.id, s.name, s.url_cover, s.cover_b64, s.cover_mime, s.updated_at,
+                SELECT s.id, s.name, s.url_cover, s.cover_b64, s.cover_mime, s.updated_at, s.auto_detected,
                        (SELECT count(*) FROM saga_books sb WHERE sb.saga_id = s.id) AS book_count
                 FROM sagas s
                 ORDER BY s.updated_at DESC, s.id DESC
@@ -275,11 +277,20 @@ public class SagaService {
                 SELECT ?, ?, COALESCE(max(position), 0) + 1 FROM saga_books WHERE saga_id = ?
                 """, sagaId, bookId, sagaId);
 
+        // Si lo habia sacado antes y ahora lo vuelve a meter a mano, el
+        // "no lo re-agregues" deja de tener sentido: se borra el descarte.
+        jdbc.update("DELETE FROM saga_book_dismissed WHERE saga_id = ? AND book_id = ?", sagaId, bookId);
+
         touch(sagaId);
         return detail(sagaId);
     }
 
-    /** DELETE /sagas/{id}/books/{bookId} — saca el libro y renumera 1..n sin huecos. */
+    /**
+     * DELETE /sagas/{id}/books/{bookId} — saca el libro y renumera 1..n sin huecos.
+     *
+     * Ademas lo anota en saga_book_dismissed: si Camila lo saco, el armado
+     * automatico no se lo vuelve a meter (aunque el titulo diga que es de la saga).
+     */
     @Transactional
     public SagaDetail removeBook(long sagaId, long bookId) {
         String sagaName = lockSaga(sagaId);
@@ -288,6 +299,10 @@ public class SagaService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Ese libro no está en la saga «" + sagaName + "»");
         }
+        jdbc.update("""
+                INSERT INTO saga_book_dismissed (saga_id, book_id) VALUES (?, ?)
+                ON CONFLICT DO NOTHING
+                """, sagaId, bookId);
         renumber(sagaId);
         touch(sagaId);
         return detail(sagaId);
@@ -342,13 +357,91 @@ public class SagaService {
         return detail(sagaId);
     }
 
+    /**
+     * POST /sagas/{targetId}/merge {fromSagaId} — une "from" en "target" y
+     * borra "from". Pensado para las sagas que el armado partio en dos porque
+     * Goodreads las escribe distinto ("Hayes Brother" / "Hayes Brothers").
+     *
+     * Orden de los pasos (importa):
+     *   1. Bloquear AMBAS sagas en orden de id: dos merges cruzados (A<-B y
+     *      B<-A) piden los locks en el mismo orden y uno espera al otro en vez
+     *      de quedar en deadlock.
+     *   2. Agregar al final de target los libros de from que no tenga, en el
+     *      orden en que estaban en from.
+     *   3. Mover las claves de saga_series_keys a target ANTES de borrar from:
+     *      si no, el ON DELETE SET NULL las dejaria "descartadas" y el armado
+     *      dejaria de reconocer esa saga del titulo.
+     *   4. Mover los descartes de libros (sin duplicar, y sin los libros que
+     *      despues de unir SI estan en target).
+     *   5. Borrar from (CASCADE: sus saga_books y lo que quede de descartes).
+     *   6. target pasa a ser de Camila (auto_detected = false) y sube arriba.
+     */
+    @Transactional
+    public SagaDetail merge(long targetId, Long fromSagaId) {
+        if (fromSagaId == null) {
+            throw bad("Falta fromSagaId: la saga que se une a esta");
+        }
+        long fromId = fromSagaId;
+        if (fromId == targetId) {
+            throw bad("No se puede unir una saga consigo misma");
+        }
+
+        List<Long> locked = jdbc.queryForList(
+                "SELECT id FROM sagas WHERE id IN (?, ?) ORDER BY id FOR UPDATE", Long.class,
+                Math.min(targetId, fromId), Math.max(targetId, fromId));
+        if (!locked.contains(targetId)) {
+            throw sagaNotFound(targetId);
+        }
+        if (!locked.contains(fromId)) {
+            throw sagaNotFound(fromId);
+        }
+
+        jdbc.update("""
+                INSERT INTO saga_books (saga_id, book_id, position)
+                SELECT ?, f.book_id,
+                       (SELECT COALESCE(max(t.position), 0) FROM saga_books t WHERE t.saga_id = ?)
+                         + row_number() OVER (ORDER BY f.position, f.book_id)
+                FROM saga_books f
+                WHERE f.saga_id = ?
+                  AND NOT EXISTS (SELECT 1 FROM saga_books t
+                                  WHERE t.saga_id = ? AND t.book_id = f.book_id)
+                """, targetId, targetId, fromId, targetId);
+
+        jdbc.update("UPDATE saga_series_keys SET saga_id = ? WHERE saga_id = ?", targetId, fromId);
+
+        // Descartes: los de from pasan a target, salvo los libros que ahora
+        // estan en target (no tiene sentido "no lo agregues" si ya esta). Y
+        // los de target que from trajo de vuelta se borran: unir es pedir
+        // explicitamente esos libros.
+        jdbc.update("""
+                INSERT INTO saga_book_dismissed (saga_id, book_id, dismissed_at)
+                SELECT ?, d.book_id, d.dismissed_at
+                FROM saga_book_dismissed d
+                WHERE d.saga_id = ?
+                  AND NOT EXISTS (SELECT 1 FROM saga_books t
+                                  WHERE t.saga_id = ? AND t.book_id = d.book_id)
+                ON CONFLICT DO NOTHING
+                """, targetId, fromId, targetId);
+        jdbc.update("""
+                DELETE FROM saga_book_dismissed d
+                WHERE d.saga_id = ?
+                  AND EXISTS (SELECT 1 FROM saga_books t
+                              WHERE t.saga_id = d.saga_id AND t.book_id = d.book_id)
+                """, targetId);
+
+        jdbc.update("DELETE FROM sagas WHERE id = ?", fromId);
+
+        touch(targetId);
+        return detail(targetId);
+    }
+
     // ─────────────────────────────────────────────────────────────
     // Soporte
     // ─────────────────────────────────────────────────────────────
 
     private SagaDetail detail(long id) {
         List<SagaRow> rows = jdbc.query("""
-                SELECT s.id, s.name, s.url_cover, s.cover_b64, s.cover_mime, s.updated_at,
+                SELECT s.id, s.name, s.url_cover, s.cover_b64, s.cover_mime, s.updated_at, s.auto_detected,
                        (SELECT count(*) FROM saga_books sb WHERE sb.saga_id = s.id) AS book_count
                 FROM sagas s
                 WHERE s.id = ?
@@ -396,7 +489,7 @@ public class SagaService {
 
         SagaSummary s = saga.toSummary(previews);
         return new SagaDetail(s.id(), s.name(), s.urlCover(), s.coverDataUrl(), s.bookCount(),
-                s.previewCovers(), s.updatedAt(), books);
+                s.previewCovers(), s.updatedAt(), books, s.autoDetected());
     }
 
     /** Bloquea la fila de la saga (o 404) y devuelve su nombre para los mensajes. */
@@ -428,9 +521,14 @@ public class SagaService {
                 """, sagaId, sagaId);
     }
 
-    /** El listado ordena por updated_at: cualquier cambio sube la saga arriba. */
+    /**
+     * Toda edicion de Camila pasa por aca: sube la saga arriba en el listado
+     * (ordena por updated_at) y la marca como SUYA (auto_detected = false), asi
+     * el "deshacer el armado automatico" ya no la borra. El armado automatico
+     * NO usa este metodo: extender una saga no cambia de quien es.
+     */
     private void touch(long sagaId) {
-        jdbc.update("UPDATE sagas SET updated_at = now() WHERE id = ?", sagaId);
+        jdbc.update("UPDATE sagas SET updated_at = now(), auto_detected = false WHERE id = ?", sagaId);
     }
 
     private void failIfSlugTaken(String slug, Long exceptId) {
@@ -559,11 +657,11 @@ public class SagaService {
     // ── Fila de sagas ──
 
     private record SagaRow(Long id, String name, String urlCover, String coverB64, String coverMime,
-                           OffsetDateTime updatedAt, long bookCount) {
+                           OffsetDateTime updatedAt, long bookCount, boolean autoDetected) {
 
         SagaSummary toSummary(List<String> previews) {
             String dataUrl = coverB64 == null ? null : "data:" + coverMime + ";base64," + coverB64;
-            return new SagaSummary(id, name, urlCover, dataUrl, bookCount, previews, updatedAt);
+            return new SagaSummary(id, name, urlCover, dataUrl, bookCount, previews, updatedAt, autoDetected);
         }
     }
 
@@ -574,5 +672,6 @@ public class SagaService {
             rs.getString("cover_b64"),
             rs.getString("cover_mime"),
             rs.getObject("updated_at", OffsetDateTime.class),
-            rs.getLong("book_count"));
+            rs.getLong("book_count"),
+            rs.getBoolean("auto_detected"));
 }

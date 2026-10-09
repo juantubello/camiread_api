@@ -2,11 +2,17 @@ package net.casapipis.camireads.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import net.casapipis.camireads.dto.saga.AddSagaBookRequest;
+import net.casapipis.camireads.dto.saga.AutoSagaApplyResult;
+import net.casapipis.camireads.dto.saga.AutoSagaPreview;
+import net.casapipis.camireads.dto.saga.AutoSagaUndoPreview;
+import net.casapipis.camireads.dto.saga.AutoSagaUndoResult;
+import net.casapipis.camireads.dto.saga.MergeSagaRequest;
 import net.casapipis.camireads.dto.saga.NewSagaRequest;
 import net.casapipis.camireads.dto.saga.SagaDetail;
 import net.casapipis.camireads.dto.saga.SagaSummary;
 import net.casapipis.camireads.dto.saga.SetSagaOrderRequest;
 import net.casapipis.camireads.dto.saga.UpdateSagaRequest;
+import net.casapipis.camireads.service.SagaAutoService;
 import net.casapipis.camireads.service.SagaService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -39,6 +45,7 @@ import java.util.List;
 public class SagaController {
 
     private final SagaService sagaService;
+    private final SagaAutoService sagaAutoService;
 
     /** GET /sagas -> SagaSummary[] (ultima modificada primero). */
     @GetMapping
@@ -87,5 +94,37 @@ public class SagaController {
     @PutMapping("/{id}/order")
     public SagaDetail reorder(@PathVariable long id, @RequestBody(required = false) SetSagaOrderRequest request) {
         return sagaService.reorder(id, request == null ? null : request.getBookIds());
+    }
+
+    /** POST /sagas/{targetId}/merge {fromSagaId} -> une from en target y borra from -> SagaDetail. */
+    @PostMapping("/{targetId}/merge")
+    public SagaDetail merge(@PathVariable long targetId, @RequestBody(required = false) MergeSagaRequest request) {
+        return sagaService.merge(targetId, request == null ? null : request.getFromSagaId());
+    }
+
+    // ── Armado automatico (Fase 10b): ver SagaAutoService ──
+
+    /** GET /sagas/auto/preview -> que crearia/extenderia el armado, sin tocar nada. */
+    @GetMapping("/auto/preview")
+    public AutoSagaPreview autoPreview() {
+        return sagaAutoService.preview();
+    }
+
+    /** POST /sagas/auto/apply -> arma las sagas (una sola transaccion). */
+    @PostMapping("/auto/apply")
+    public AutoSagaApplyResult autoApply() {
+        return sagaAutoService.apply();
+    }
+
+    /** GET /sagas/auto/undo-preview -> cuantas sagas automaticas sin tocar borraria el deshacer. */
+    @GetMapping("/auto/undo-preview")
+    public AutoSagaUndoPreview autoUndoPreview() {
+        return sagaAutoService.undoPreview();
+    }
+
+    /** POST /sagas/auto/undo -> borra las sagas automaticas que Camila no edito. */
+    @PostMapping("/auto/undo")
+    public AutoSagaUndoResult autoUndo() {
+        return sagaAutoService.undo();
     }
 }

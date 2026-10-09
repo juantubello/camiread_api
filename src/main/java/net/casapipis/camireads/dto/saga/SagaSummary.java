@@ -12,6 +12,9 @@ import java.util.List;
  *
  * previewCovers: hasta 4 tapas de los primeros libros, en orden de posicion,
  * para que el front arme un collage cuando la saga no tiene imagen propia.
+ *
+ * autoDetected (Fase 10b): la creo el armado automatico y Camila todavia no
+ * la toco (el front la marca "Automática"; el deshacer borra solo estas).
  */
 public record SagaSummary(
         Long id,
@@ -20,6 +23,7 @@ public record SagaSummary(
         String coverDataUrl,
         long bookCount,
         List<String> previewCovers,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        boolean autoDetected
 ) {
 }
